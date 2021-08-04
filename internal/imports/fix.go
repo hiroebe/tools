@@ -32,8 +32,17 @@ import (
 
 // importToGroup is a list of functions which map from an import path to
 // a group number.
-var importToGroup = []func(localPrefix, importPath string) (num int, ok bool){
-	func(localPrefix, importPath string) (num int, ok bool) {
+var importToGroup = []func(localPrefix, projectModulePath, importPath string) (num int, ok bool){
+	func(_, projectModulePath, importPath string) (num int, ok bool) {
+		if projectModulePath == "" {
+			return
+		}
+		if strings.HasPrefix(importPath, projectModulePath) {
+			return 4, true
+		}
+		return
+	},
+	func(localPrefix, _, importPath string) (num int, ok bool) {
 		if localPrefix == "" {
 			return
 		}
@@ -44,13 +53,13 @@ var importToGroup = []func(localPrefix, importPath string) (num int, ok bool){
 		}
 		return
 	},
-	func(_, importPath string) (num int, ok bool) {
+	func(_, _, importPath string) (num int, ok bool) {
 		if strings.HasPrefix(importPath, "appengine") {
 			return 2, true
 		}
 		return
 	},
-	func(_, importPath string) (num int, ok bool) {
+	func(_, _, importPath string) (num int, ok bool) {
 		firstComponent := strings.Split(importPath, "/")[0]
 		if strings.Contains(firstComponent, ".") {
 			return 1, true
@@ -59,9 +68,9 @@ var importToGroup = []func(localPrefix, importPath string) (num int, ok bool){
 	},
 }
 
-func importGroup(localPrefix, importPath string) int {
+func importGroup(localPrefix, projectModulePath, importPath string) int {
 	for _, fn := range importToGroup {
-		if n, ok := fn(localPrefix, importPath); ok {
+		if n, ok := fn(localPrefix, projectModulePath, importPath); ok {
 			return n
 		}
 	}
@@ -1082,7 +1091,6 @@ func addExternalCandidates(pass *pass, refs references, filename string) error {
 			defer wg.Done()
 
 			found, err := findImport(ctx, pass, found[pkgName], pkgName, symbols, filename)
-
 			if err != nil {
 				firstErrOnce.Do(func() {
 					firstErr = err

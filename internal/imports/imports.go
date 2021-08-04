@@ -18,10 +18,13 @@ import (
 	"go/printer"
 	"go/token"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
 )
 
@@ -104,8 +107,9 @@ func ApplyFixes(fixes []*ImportFix, filename string, src []byte, opt *Options, e
 }
 
 func formatFile(fileSet *token.FileSet, file *ast.File, src []byte, adjust func(orig []byte, src []byte) []byte, opt *Options) ([]byte, error) {
+	projectModulePath, _ := findProjectModule(fileSet, file)
 	mergeImports(fileSet, file)
-	sortImports(opt.LocalPrefix, fileSet, file)
+	sortImports(opt.LocalPrefix, projectModulePath, fileSet, file)
 	imps := astutil.Imports(fileSet, file)
 	var spacesBefore []string // import paths we need spaces before
 	for _, impSection := range imps {
@@ -116,7 +120,7 @@ func formatFile(fileSet *token.FileSet, file *ast.File, src []byte, adjust func(
 		lastGroup := -1
 		for _, importSpec := range impSection {
 			importPath, _ := strconv.Unquote(importSpec.Path.Value)
-			groupNum := importGroup(opt.LocalPrefix, importPath)
+			groupNum := importGroup(opt.LocalPrefix, projectModulePath, importPath)
 			if groupNum != lastGroup && lastGroup != -1 {
 				spacesBefore = append(spacesBefore, importPath)
 			}
@@ -343,4 +347,27 @@ func addImportSpaces(r io.Reader, breaks []string) ([]byte, error) {
 		fmt.Fprint(&out, s)
 	}
 	return out.Bytes(), nil
+}
+
+func findProjectModule(fileSet *token.FileSet, file *ast.File) (string, error) {
+	gofilename := fileSet.File(file.Pos()).Name()
+	dir := filepath.Dir(gofilename)
+	for {
+		modfilename := filepath.Join(dir, "go.mod")
+		if data, err := os.ReadFile(modfilename); err == nil {
+			gomod, err := modfile.ParseLax(modfilename, data, nil)
+			if err != nil {
+				return "", err
+			}
+			return gomod.Module.Mod.Path, nil
+		}
+
+		if dir == "." || dir[len(dir)-1] == filepath.Separator {
+			break
+		}
+
+		dir = filepath.Dir(dir)
+	}
+
+	return "", fmt.Errorf("go.mod not found")
 }

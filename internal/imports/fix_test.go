@@ -2782,3 +2782,81 @@ var _, _ = fmt.Sprintf, dot.Dot
 		gopathOnly: true, // our modules testing setup doesn't allow modules without dots.
 	}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
 }
+
+func TestProjectPackage(t *testing.T) {
+	tests := []struct {
+		name        string
+		localPrefix string
+		src         string
+		want        string
+	}{
+		{
+			name:        "project_package",
+			localPrefix: "",
+			src: `package main
+import (
+	_ "runtime"
+	_ "thirdparty.com/thirdparty"
+	_ "thisproject.com/thisproject"
+)
+`,
+			want: `package main
+
+import (
+	_ "runtime"
+
+	_ "thirdparty.com/thirdparty"
+
+	_ "thisproject.com/thisproject"
+)
+`,
+		},
+		{
+			name:        "project_package_with_local",
+			localPrefix: "local.com",
+			src: `package main
+import (
+	_ "runtime"
+	_ "thirdparty.com/thirdparty"
+	_ "local.com/local"
+	_ "thisproject.com/thisproject"
+)
+`,
+			want: `package main
+
+import (
+	_ "runtime"
+
+	_ "thirdparty.com/thirdparty"
+
+	_ "local.com/local"
+
+	_ "thisproject.com/thisproject"
+)
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testConfig{
+				module: packagestest.Module{
+					Name: "thisproject.com",
+					Files: fm{
+						"t.go":   tt.src,
+						"go.mod": "module thisproject.com\n",
+					},
+				},
+			}.test(t, func(t *goimportTest) {
+				options := &Options{
+					LocalPrefix: tt.localPrefix,
+					TabWidth:    8,
+					TabIndent:   true,
+					Comments:    true,
+					Fragment:    true,
+				}
+				t.assertProcessEquals("thisproject.com", "t.go", nil, options, tt.want)
+			})
+		})
+	}
+}
